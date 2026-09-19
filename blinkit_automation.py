@@ -228,9 +228,13 @@ def download_latest_report(page, item_id: str, product_name: str) -> dict:
 
 def run():
     with sync_playwright() as p:
-        browser = p.chromium.connect_over_cdp(CHROME_DEBUG_URL)
-        context = browser.contexts[0] if browser.contexts else browser.new_context()
-        page = next((pg for pg in context.pages if "seller.blinkit.com" in pg.url), context.pages[0])
+        if os.getenv("BROWSER_MODE", "cdp").lower() == "persistent":
+            from cloud_browser import get_blinkit_page
+            page = get_blinkit_page()
+        else:
+            browser = p.chromium.connect_over_cdp(CHROME_DEBUG_URL)
+            context = browser.contexts[0] if browser.contexts else browser.new_context()
+            page = next((pg for pg in context.pages if "seller.blinkit.com" in pg.url), context.pages[0])
 
         ensure_product_expansion(page)
         rows = [r for r in get_product_rows(page) if r["item_id"] not in EXCLUDED_ITEM_IDS]
