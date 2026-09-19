@@ -1,9 +1,16 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Blinkit Report Automation</title><link rel="stylesheet" href="/frontend/styles.css"></head>
 <body><main class="container">
-<header><h1>Blinkit Report Automation</h1><p>Download Blinkit reports, archive them, and sync them to Google Sheets.</p></header>
-<section class="card"><div class="row"><div><h2>Blinkit session</h2><div id="session">Checking...</div></div><a class="button secondary" href="/auth/google">Connect Google</a></div></section>
+<header><h1>Blinkit Report Automation</h1><p>Download Blinkit reports and sync them to Google Sheets.</p></header>
+<section id="localOnly" class="card notice" hidden>
+<h2>Run the application locally</h2>
+<p>This GitHub Pages address is only a project preview. Blinkit automation cannot run from GitHub Pages because it needs local Chrome, Playwright and the authenticated Blinkit session.</p>
+<p><strong>On Windows:</strong> download the repository, then double-click <code>Start Blinkit Automation.bat</code>.</p>
+<p>The working dashboard will open automatically at <code>http://127.0.0.1:8000</code>.</p>
+</section>
+<section class="card"><div class="row"><div><h2>Blinkit session</h2><div id="session">Checking...</div></div><a id="googleBtn" class="button secondary" href="/auth/google">Connect Google</a></div></section>
 <section class="card"><h2>Report automation</h2><button id="downloadBtn">Download Latest Reports</button><div id="downloadStatus" class="status">Ready.</div></section>
 <section class="card"><h2>Google Sheets & Drive</h2><button id="uploadBtn">Upload Latest Reports to Google Sheets</button><div id="uploadStatus" class="status">Ready.</div></section>
 <section class="card"><h2>Run summary</h2><div class="progress"><div id="bar"></div></div><div id="summary">No run yet.</div><pre id="details"></pre></section>
