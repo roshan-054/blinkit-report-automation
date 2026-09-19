@@ -11,11 +11,12 @@ import pandas as pd
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
 from dotenv import load_dotenv
 
 load_dotenv()
 
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive.file"]
 TOKEN_DIR = Path("tokens")
 TOKEN_FILE = TOKEN_DIR / "google_sheets_token.json"
 CLIENT_SECRET_FILE = Path("credentials.json")
@@ -75,6 +76,7 @@ class GoogleSheetsSync:
     def __init__(self, spreadsheet_id: str, protected_sheet_id: int):
         self.spreadsheet_id = spreadsheet_id
         self.protected_sheet_id = protected_sheet_id
+        self.drive_root_name = os.getenv("DRIVE_ROOT_FOLDER", "Blinkit Reports")
 
     def status(self) -> dict:
         return {
@@ -225,6 +227,50 @@ class GoogleSheetsSync:
             new_rows.append(raw)
         return new_rows, duplicate_count
 
+    def _drive_service(self):
+        if not TOKEN_FILE.exists():
+            raise RuntimeError("Google is not authorized. Connect Google first.")
+        creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
+        if not creds.valid:
+            if creds.expired and creds.refresh_token:
+                from google.auth.transport.requests import Request
+                creds.refresh(Request())
+                TOKEN_FILE.write_text(creds.to_json(), encoding="utf-8")
+            else:
+                raise RuntimeError("Google authorization has expired or is invalid.")
+        return build("drive", "v3", credentials=creds, cache_discovery=False)
+
+    def _drive_folder(self, service, name: str, parent_id: str | None = None) -> str:
+        safe = name.replace("'", "\\'")
+        query = "trashed = false and mimeType = 'application/vnd.google-apps.folder' and name = '" + safe + "'"
+        if parent_id:
+            query += " and '" + parent_id + "' in parents"
+        result = service.files().list(q=query, spaces="drive", fields="files(id,name)", pageSize=10).execute()
+        if result.get("files"):
+            return result["files"][0]["id"]
+        body = {"name": name, "mimeType": "application/vnd.google-apps.folder"}
+        if parent_id:
+            body["parents"] = [parent_id]
+        return service.files().create(body=body, fields="id").execute()["id"]
+
+    def archive_to_drive(self, path: Path) -> dict:
+        service = self._drive_service()
+        root_id = self._drive_folder(service, self.drive_root_name)
+        month_id = self._drive_folder(service, path.parent.parent.name, root_id)
+        date_id = self._drive_folder(service, path.parent.name, month_id)
+        safe = path.name.replace("'", "\\'")
+        query = "trashed = false and name = '" + safe + "' and '" + date_id + "' in parents"
+        existing = service.files().list(q=query, spaces="drive", fields="files(id,name)", pageSize=10).execute().get("files", [])
+        if existing:
+            return {"status": "SKIPPED", "file": path.name, "drive_file_id": existing[0]["id"]}
+        media = MediaFileUpload(str(path), resumable=True)
+        uploaded = service.files().create(
+            body={"name": path.name, "parents": [date_id]},
+            media_body=media,
+            fields="id,name,webViewLink"
+        ).execute()
+        return {"status": "UPLOADED", "file": uploaded.get("name"), "drive_file_id": uploaded.get("id"), "web_url": uploaded.get("webViewLink")}
+
     def sync_dataframe(self, product_name: str, df: pd.DataFrame) -> dict:
         if df.empty:
             return {"product": product_name, "status": "EMPTY", "added": 0}
@@ -344,6 +390,10 @@ class GoogleSheetsSync:
                 df = read_report(path)
                 result = self.sync_dataframe(file_product_name(path), df)
                 result["file"] = str(path)
+                try:
+                    result["drive"] = self.archive_to_drive(path)
+                except Exception as drive_exc:
+                    result["drive"] = {"status": "ERROR", "error": str(drive_exc)}
                 results.append(result)
             except Exception as exc:
                 results.append({"file": str(path), "status": "ERROR", "error": str(exc)})
