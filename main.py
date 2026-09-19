@@ -6,6 +6,7 @@ import os
 from fastapi import BackgroundTasks
 from threading import Lock
 from sheets import GoogleSheetsSync
+from cloud_browser import session_status
 load_dotenv()
 app=FastAPI(title="Blinkit Report Automation",version="0.2.0")
 run_lock = Lock()
@@ -52,3 +53,7 @@ def _run_download():
         run()
     finally:
         run_lock.release()
+
+@app.get("/blinkit/session")
+def blinkit_session():
+    return session_status()
