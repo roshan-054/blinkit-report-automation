@@ -1,30 +1,14 @@
 const $=id=>document.getElementById(id);
 const downloadBtn=$("downloadBtn"),uploadBtn=$("uploadBtn"),downloadStatus=$("downloadStatus"),uploadStatus=$("uploadStatus"),bar=$("bar"),summary=$("summary"),details=$("details");
-
-async function refreshSession(){
-  try{const r=await fetch("/blinkit/session");const d=await r.json();$("session").textContent=d.authenticated?"Blinkit session detected":"Blinkit session not detected";}catch(e){$("session").textContent="Session status unavailable";}
+const isGithubPages=window.location.hostname.endsWith(".github.io");
+if(isGithubPages){
+ $("localOnly").hidden=false;$("session").textContent="Preview only — run the Windows launcher for the working application.";
+ downloadBtn.disabled=true;uploadBtn.disabled=true;$("googleBtn").removeAttribute("href");$("googleBtn").classList.add("disabled");
+ downloadStatus.textContent="Unavailable on GitHub Pages.";uploadStatus.textContent="Unavailable on GitHub Pages.";
+}else{
+ async function refreshSession(){try{const r=await fetch("/blinkit/session");const d=await r.json();$("session").textContent=d.authenticated?"Blinkit session detected":"Blinkit session not detected";}catch(e){$("session").textContent="Session status unavailable";}}
+ async function poll(jobId,statusEl){while(true){const r=await fetch("/jobs/"+encodeURIComponent(jobId));const d=await r.json();if(!r.ok)throw Error(d.detail||"Job status unavailable");statusEl.textContent=d.message||d.status;if(d.status==="completed"||d.status==="failed")return d;await new Promise(x=>setTimeout(x,1500));}}
+ downloadBtn.onclick=async()=>{downloadBtn.disabled=true;bar.style.width="10%";downloadStatus.textContent="Starting download...";try{const r=await fetch("/blinkit/download",{method:"POST"}),d=await r.json();if(!r.ok)throw Error(d.detail||"Unable to start");const job=await poll(d.job_id,downloadStatus);if(job.status==="failed")throw Error(job.error||"Download failed");bar.style.width="100%";summary.textContent="Blinkit report run completed.";details.textContent=JSON.stringify(job.results||[],null,2);}catch(e){downloadStatus.textContent="Error: "+e.message;bar.style.width="0%";}finally{downloadBtn.disabled=false;refreshSession();}};
+ uploadBtn.onclick=async()=>{uploadBtn.disabled=true;bar.style.width="10%";uploadStatus.textContent="Starting bulk sync...";try{const r=await fetch("/sheets/upload",{method:"POST"}),d=await r.json();if(!r.ok)throw Error(d.detail||"Unable to start");const job=await poll(d.job_id,uploadStatus);if(job.status==="failed")throw Error(job.error||"Sync failed");const a=job.results||[],added=a.reduce((n,x)=>n+(x.added||0),0),dup=a.reduce((n,x)=>n+(x.skipped_duplicates||0),0),drive=a.filter(x=>x.drive?.status==="UPLOADED").length,errors=a.filter(x=>["ERROR","SCHEMA_MISMATCH","AMBIGUOUS_TAB"].includes(x.status)).length;bar.style.width="100%";summary.textContent=a.length+" products processed • "+added.toLocaleString()+" rows added • "+dup.toLocaleString()+" duplicates skipped • "+drive+" Drive files archived • "+errors+" exceptions";details.textContent=JSON.stringify(a,null,2);}catch(e){uploadStatus.textContent="Error: "+e.message;bar.style.width="0%";}finally{uploadBtn.disabled=false;}};
+ refreshSession();
 }
-async function poll(jobId,statusEl){
-  while(true){
-    const r=await fetch("/jobs/"+encodeURIComponent(jobId));const d=await r.json();
-    statusEl.textContent=d.message||d.status;
-    if(d.status==="completed"||d.status==="failed") return d;
-    await new Promise(x=>setTimeout(x,1500));
-  }
-}
-downloadBtn.onclick=async()=>{
-  downloadBtn.disabled=true;bar.style.width="10%";downloadStatus.textContent="Starting download...";
-  try{const r=await fetch("/blinkit/download",{method:"POST"}),d=await r.json();if(!r.ok)throw Error(d.detail||"Unable to start");
-    const job=await poll(d.job_id,downloadStatus);if(job.status==="failed")throw Error(job.error||"Download failed");
-    bar.style.width="100%";summary.textContent="Blinkit report run completed.";details.textContent=JSON.stringify(job.results||[],null,2);
-  }catch(e){downloadStatus.textContent="Error: "+e.message;bar.style.width="0%"}finally{downloadBtn.disabled=false;refreshSession();}
-};
-uploadBtn.onclick=async()=>{
-  uploadBtn.disabled=true;bar.style.width="10%";uploadStatus.textContent="Starting bulk sync...";
-  try{const r=await fetch("/sheets/upload",{method:"POST"}),d=await r.json();if(!r.ok)throw Error(d.detail||"Unable to start");
-    const job=await poll(d.job_id,uploadStatus);if(job.status==="failed")throw Error(job.error||"Sync failed");
-    const a=job.results||[],added=a.reduce((n,x)=>n+(x.added||0),0),dup=a.reduce((n,x)=>n+(x.skipped_duplicates||0),0),drive=a.filter(x=>x.drive?.status==="UPLOADED").length,errors=a.filter(x=>["ERROR","SCHEMA_MISMATCH","AMBIGUOUS_TAB"].includes(x.status)).length;
-    bar.style.width="100%";summary.textContent=a.length+" products processed • "+added.toLocaleString()+" rows added • "+dup.toLocaleString()+" duplicates skipped • "+drive+" Drive files archived • "+errors+" exceptions";details.textContent=JSON.stringify(a,null,2);
-  }catch(e){uploadStatus.textContent="Error: "+e.message;bar.style.width="0%"}finally{uploadBtn.disabled=false}
-};
-refreshSession();
