@@ -32,3 +32,6 @@ Log into Blinkit manually, then run the application.
 
 ## Environment
 Copy `.env.example` to `.env` and configure Google OAuth credentials. Never commit client secrets or OAuth tokens.
+
+## Google Drive archive
+When Google authorization includes Drive access, each processed report is archived automatically under `Blinkit Reports/<Month YYYY>/<DD-MMM-YYYY>/`. Existing files are skipped. Drive archiving errors are reported separately and do not roll back a successful Sheets sync.
