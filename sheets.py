@@ -274,7 +274,27 @@ class GoogleSheetsSync:
                 "report_headers": headers,
             }
 
-        new_rows, duplicate_count = self._new_rows(headers, data, existing)
+        date_column = next((h for h in headers if norm(h) == "date"), None)
+        last_existing_date = None
+        report_min_date = report_max_date = None
+        candidate_df = df
+
+        if date_column and len(existing) > 1:
+            existing_df = pd.DataFrame(existing[1:], columns=existing_headers)
+            parsed_existing = pd.to_datetime(existing_df[date_column], errors="coerce")
+            if parsed_existing.notna().any():
+                last_existing_date = parsed_existing.max().date()
+
+            parsed_report = pd.to_datetime(df[date_column], errors="coerce")
+            if parsed_report.notna().any():
+                report_min_date = parsed_report.min().date()
+                report_max_date = parsed_report.max().date()
+                if last_existing_date is not None:
+                    # Include the latest existing date for same-day row-level dedupe.
+                    candidate_df = df[(parsed_report.isna()) | (parsed_report.dt.date >= last_existing_date)].copy()
+
+        candidate_data = candidate_df.fillna("").astype(str).values.tolist()
+        new_rows, duplicate_count = self._new_rows(headers, candidate_data, existing)
         self._batch_append(target["title"], new_rows)
 
         mapping = self._load_mapping()
@@ -290,25 +310,47 @@ class GoogleSheetsSync:
             "candidates": candidates,
         }
 
+    def _report_date_from_path(self, path: Path):
+        for parent in [path.parent, *path.parents]:
+            match = re.fullmatch(r"\d{2}-[A-Za-z]{3}-\d{4}", parent.name)
+            if match:
+                try:
+                    return pd.to_datetime(parent.name, format="%d-%b-%Y")
+                except Exception:
+                    pass
+        return pd.Timestamp(path.stat().st_mtime, unit="s")
+
     def sync_report_directory(self) -> dict:
         root = Path(os.getenv("REPORT_ROOT", "Blinkit_Reports"))
-        files = [
+        all_files = [
             p for p in root.rglob("*")
             if p.is_file() and p.suffix.lower() in {".xlsx", ".xls", ".csv"}
         ]
-        if not files:
+        if not all_files:
             return {"error": f"No report files found under {root}"}
 
+        # Process only the newest archived report for each product.
+        latest_by_product = {}
+        for path in all_files:
+            key = norm(file_product_name(path))
+            stamp = self._report_date_from_path(path)
+            if key not in latest_by_product or stamp > latest_by_product[key][0]:
+                latest_by_product[key] = (stamp, path)
+
+        files = [item[1] for item in sorted(latest_by_product.values(), key=lambda x: x[1].name.lower())]
         results = []
-        for path in sorted(files):
+        for path in files:
             try:
                 df = read_report(path)
-                results.append(self.sync_dataframe(file_product_name(path), df))
+                result = self.sync_dataframe(file_product_name(path), df)
+                result["file"] = str(path)
+                results.append(result)
             except Exception as exc:
                 results.append({"file": str(path), "status": "ERROR", "error": str(exc)})
 
         return {
             "status": "completed",
             "files": len(files),
+            "archived_files_found": len(all_files),
             "results": results,
         }
