@@ -1,0 +1,10 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file: [.env]
+    volumes:
+      - ./Blinkit_Reports:/app/Blinkit_Reports
+      - ./tokens:/app/tokens
+      - ./credentials.json:/app/credentials.json:ro
