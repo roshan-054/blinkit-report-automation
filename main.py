@@ -3,6 +3,7 @@ from fastapi.responses import RedirectResponse,FileResponse
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 import os
+from fastapi import BackgroundTasks
 from threading import Lock
 from sheets import GoogleSheetsSync
 load_dotenv()
@@ -26,17 +27,28 @@ def google_callback(code:str):
 @app.get("/sheets/status")
 def sheets_status():return sync.status()
 @app.post("/sheets/upload")
-def upload_reports():
-    try:return sync.sync_report_directory()
-    except Exception as e:raise HTTPException(400,str(e))
+def upload_reports(background_tasks: BackgroundTasks):
+    background_tasks.add_task(sync.sync_report_directory)
+    return {"status": "queued", "message": "Google Sheets sync job queued."}
+
+@app.get("/jobs")
+def jobs():
+    return {"status": "background_tasks_enabled"}
 @app.post("/blinkit/download")
-def download_reports():
+def download_reports(background_tasks: BackgroundTasks):
     from blinkit_automation import run
     if not run_lock.acquire(blocking=False):
         raise HTTPException(409, "A Blinkit report job is already running.")
+    run_lock.release()
+    background_tasks.add_task(_run_download)
+    return {"status": "queued", "message": "Blinkit report job queued."}
+
+
+def _run_download():
+    from blinkit_automation import run
+    if not run_lock.acquire(blocking=False):
+        return
     try:
-        return {"message":"Blinkit report run completed.","results":run()}
-    except Exception as e:
-        raise HTTPException(500,str(e))
+        run()
     finally:
         run_lock.release()
