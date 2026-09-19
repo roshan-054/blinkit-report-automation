@@ -23,6 +23,52 @@ DOWNLOAD_TIMEOUT_MS = 10 * 60 * 1000
 PRODUCT_COOLDOWN_SECONDS = 5
 
 
+def extract_product_name(row) -> str:
+    """Extract the actual product name from a Product Expansion row."""
+    candidates = []
+    selectors = [
+        "a",
+        "button",
+        "[title]",
+        "[data-testid]",
+    ]
+    for selector in selectors:
+        try:
+            for el in row.locator(selector).all():
+                try:
+                    text = el.inner_text().strip()
+                    title = (el.get_attribute("title") or "").strip()
+                    for value in (text, title):
+                        if value and len(value) >= 4:
+                            candidates.append(value)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    blocked = {
+        "item id", "performance", "reports", "view", "details",
+        "active", "inactive", "enabled", "disabled"
+    }
+    cleaned = []
+    for value in candidates:
+        normalized = re.sub(r"\s+", " ", value).strip()
+        if normalized.lower() in blocked:
+            continue
+        if re.search(r"Item ID\s*:", normalized, re.I):
+            continue
+        if normalized not in cleaned:
+            cleaned.append(normalized)
+
+    # Prefer the longest plausible product label; row text is only a fallback.
+    if cleaned:
+        return max(cleaned, key=len)
+
+    text = re.sub(r"\s+", " ", row.inner_text()).strip()
+    text = re.sub(r"Item ID\s*:\s*\d+", "", text, flags=re.I)
+    return text.strip()
+
+
 def clean_filename(name: str) -> str:
     return re.sub(r'[<>:"/\\|?*\x00-\x1F]', "_", name).strip().rstrip(".")
 
@@ -70,8 +116,8 @@ def get_product_rows(page) -> list[dict]:
                 continue
             item_id = m.group(1)
             row = item.locator("xpath=ancestor::*[.//input[@type='checkbox']][1]")
-            full_text = row.inner_text()
-            rows.append({"item_id": item_id, "text": full_text, "row": row})
+            product_name = extract_product_name(row)
+            rows.append({"item_id": item_id, "product_name": product_name, "row": row})
         except Exception:
             continue
 
@@ -196,7 +242,7 @@ def run():
                 results.append({**r, "status": "ERROR", "error": "Product row not found"})
                 continue
             try:
-                result = download_latest_report(page, r["item_id"], r["text"])
+                result = download_latest_report(page, r["item_id"], r["product_name"])
                 results.append(result)
                 if result.get("status") == "TIMEOUT":
                     retry_queue.append(r)
@@ -212,7 +258,7 @@ def run():
                 results.append({**r, "status": "RETRY_ERROR", "error": "Product row not found"})
                 continue
             try:
-                results.append(download_latest_report(page, r["item_id"], r["text"]))
+                results.append(download_latest_report(page, r["item_id"], r["product_name"]))
             except PlaywrightTimeoutError:
                 results.append({**r, "status": "FAILED_AFTER_RETRY"})
             finally:
