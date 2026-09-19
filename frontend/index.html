@@ -1,0 +1,6 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Blinkit Report Automation</title><link rel="stylesheet" href="/frontend/styles.css"></head>
+<body><main class="container"><header><h1>Blinkit Report Automation</h1><p>Download Blinkit reports and sync them to Google Sheets.</p></header>
+<section class="card"><h2>1. Blinkit Reports</h2><button id="downloadBtn">Download Latest Reports</button><div id="downloadStatus" class="status">Ready.</div></section>
+<section class="card"><h2>2. Google Sheets</h2><div class="actions"><a class="button secondary" href="/auth/google">Connect Google Sheets</a><button id="uploadBtn">Upload Latest Reports to Google Sheets</button></div><div id="uploadStatus" class="status">Ready.</div></section>
+<section class="card"><h2>Sync Progress</h2><div class="progress"><div id="bar"></div></div><div id="summary">No sync has run yet.</div><pre id="details"></pre></section></main><script src="/frontend/app.js"></script></body></html>
