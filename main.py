@@ -3,9 +3,12 @@ from fastapi.responses import RedirectResponse,FileResponse
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 import os
+from threading import Lock
 from sheets import GoogleSheetsSync
 load_dotenv()
 app=FastAPI(title="Blinkit Report Automation",version="0.2.0")
+run_lock = Lock()
+
 sync=GoogleSheetsSync(spreadsheet_id=os.getenv("GOOGLE_SPREADSHEET_ID","1SMMFfqWqWalOys5swqpxk_jIz_l4-kJPU_9V9Ix9OKQ"),protected_sheet_id=int(os.getenv("PROTECTED_MAIN_SHEET_ID","695987561")))
 app.mount("/frontend",StaticFiles(directory="frontend"),name="frontend")
 @app.get("/")
@@ -29,5 +32,11 @@ def upload_reports():
 @app.post("/blinkit/download")
 def download_reports():
     from blinkit_automation import run
-    try:return {"message":"Blinkit report run completed.","results":run()}
-    except Exception as e:raise HTTPException(500,str(e))
+    if not run_lock.acquire(blocking=False):
+        raise HTTPException(409, "A Blinkit report job is already running.")
+    try:
+        return {"message":"Blinkit report run completed.","results":run()}
+    except Exception as e:
+        raise HTTPException(500,str(e))
+    finally:
+        run_lock.release()
